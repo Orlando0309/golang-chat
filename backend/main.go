@@ -2,62 +2,40 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/http"
-
-	"github.com/gorilla/websocket"
+	"github.com/TutorialEdge/realtime-chat-go-react/pkg/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize: 1024,
-	WriteBufferSize: 1024,
-
-	CheckOrigin: func(r *http.Request) bool {return true},
-}
-
-func reader(conn *websocket.Conn) {
-	for {
-		messageType , p , err := conn.ReadMessage()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
-		fmt.Println(string(p))
-
-		if err := conn.WriteMessage(messageType, p); err != nil {
-            log.Println(err)
-            return
-        }
-
-	}
-}
 
 // webSocket ENDPOINT
-func serveWs(w http.ResponseWriter, r *http.Request) {
-	fmt.Println(r.Host)
+func serveWs(pool *websocket.Pool, w http.ResponseWriter, r *http.Request) {
+    fmt.Println("WebSocket Endpoint Hit")
+    conn, err := websocket.Upgrade(w, r)
+    if err != nil {
+        fmt.Fprintf(w, "%+v\n", err)
+    }
 
-	// request to websocket
-	ws, err := upgrader.Upgrade(w,r,nil)
+    client := &websocket.Client{
+        Conn: conn,
+        Pool: *pool,
+    }
 
-	if err != nil {
-		log.Println(err)
-	}
-
-	reader(ws)
+    pool.Register <- client
+    client.Read()
 }
 
 
-func setUpRoutes() {
-	http.HandleFunc("/",func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w,"Simple Server")
-	})
+func setupRoutes() {
+    pool := websocket.NewPool()
+    go pool.Start()
 
-	http.HandleFunc("/ws",serveWs)
+    http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+        serveWs(pool, w, r)
+    })
 }
 
 func main() {
-	setUpRoutes()
-	http.ListenAndServe(":8080", nil);
-	fmt.Println("It worked")
+    fmt.Println("Distributed Chat App v0.01")
+    setupRoutes()
+    http.ListenAndServe(":8080", nil)
 }
